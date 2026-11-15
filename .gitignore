@@ -140,3 +140,11 @@ dmypy.json
 
 static/
 media/
+# Foodgram
+.env
+venv/
+db.sqlite3
+backend/media/
+backend/collected_static/
+node_modules/
+frontend/build/

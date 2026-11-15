@@ -1,8 +1,8 @@
-# build env
+# Контейнер только собирает фронтенд и копирует файлы в общий volume.
 FROM node:21.7.1-alpine
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 COPY . ./
 RUN npm run build
-CMD cp -r build result_build
+CMD ["cp", "-r", "/app/build/.", "/frontend_static/"]

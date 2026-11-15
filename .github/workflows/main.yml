@@ -1,0 +1,104 @@
+name: Foodgram CI/CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    name: PEP 8 и проверка Django
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: foodgram_user
+          POSTGRES_PASSWORD: foodgram_password
+          POSTGRES_DB: foodgram
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pep8-naming -r backend/requirements.txt
+      - name: flake8
+        run: python -m flake8 backend/ --exclude 'backend/*/migrations'
+      - name: Миграции на PostgreSQL
+        env:
+          POSTGRES_USER: foodgram_user
+          POSTGRES_PASSWORD: foodgram_password
+          POSTGRES_DB: foodgram
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+        run: |
+          cd backend
+          python manage.py makemigrations --check --dry-run
+          python manage.py migrate
+          python manage.py check
+
+  build_and_push:
+    name: Сборка и публикация образов на Docker Hub
+    runs-on: ubuntu-latest
+    needs: tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/foodgram_backend:latest
+      - name: frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend/
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/foodgram_frontend:latest
+      - name: gateway
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./infra/Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/foodgram_gateway:latest
+
+  deploy:
+    name: Деплой на сервер
+    runs-on: ubuntu-latest
+    needs: build_and_push
+    steps:
+      - uses: actions/checkout@v4
+      - name: Копирование docker-compose.production.yml на сервер
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          source: infra/docker-compose.production.yml
+          target: foodgram
+          strip_components: 1
+      - name: Перезапуск контейнеров
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          script: |
+            cd foodgram
+            export DOCKERHUB_USERNAME=${{ secrets.DOCKER_USERNAME }}
+            sudo -E docker compose -f docker-compose.production.yml pull
+            sudo -E docker compose -f docker-compose.production.yml down
+            sudo -E docker compose -f docker-compose.production.yml up -d
