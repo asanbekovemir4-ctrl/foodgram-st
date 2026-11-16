@@ -23,9 +23,9 @@ PASSWORD = 'Foodgram2025!'
 RECIPES = (
     # (название, описание, время, фото, ингредиенты)
     ('Блины на молоке', 'Смешать всё, жарить на сковороде.', 30, 'blini.jpg',
-     (('молоко', 500), ('мука пшеничная', 200), ('яйца куриные', 2))),
+     (('молоко', 500), ('пшеничная мука', 200), ('яйца куриные', 110))),
     ('Омлет', 'Взбить яйца с молоком и запечь.', 15, 'omelette.jpg',
-     (('яйца куриные', 3), ('молоко', 100))),
+     (('яйца куриные', 165), ('молоко', 100))),
     ('Гречка с маслом', 'Отварить гречку, добавить масло.', 25,
      'buckwheat.jpg',
      (('гречневая крупа', 200), ('сливочное масло', 30))),
@@ -60,15 +60,15 @@ class Command(BaseCommand):
                 if Path(recipe.image.name).stem.startswith('test'):
                     recipe.image.delete(save=False)
                     set_image(recipe, image)
-                continue
-            recipe = Recipe(
-                author=user, name=name, text=text, cooking_time=time)
-            set_image(recipe, image)
+            else:
+                recipe = Recipe(
+                    author=user, name=name, text=text, cooking_time=time)
+                set_image(recipe, image)
             for ingredient_name, amount in items:
                 ingredient = Ingredient.objects.filter(
-                    name__istartswith=ingredient_name).first()
+                    name=ingredient_name).first()
                 if ingredient:
-                    RecipeIngredient.objects.get_or_create(
+                    RecipeIngredient.objects.update_or_create(
                         recipe=recipe, ingredient=ingredient,
                         defaults={'amount': amount})
         self.stdout.write(self.style.SUCCESS(
