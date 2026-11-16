@@ -1,14 +1,16 @@
-import io
-import random
+from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.files.base import ContentFile
+from django.core.files import File
 from django.core.management.base import BaseCommand
-from PIL import Image
 
 from recipes.models import Ingredient, Recipe, RecipeIngredient
 
 User = get_user_model()
+
+# Фото блюд с Wikimedia Commons, авторы и лицензии — в data/images/CREDITS.md
+IMAGES_DIR = Path(settings.BASE_DIR) / 'data' / 'images'
 
 USERS = (
     # (username, email, first_name, last_name, is_staff)
@@ -19,23 +21,24 @@ USERS = (
 PASSWORD = 'Foodgram2025!'
 
 RECIPES = (
-    ('Блины на молоке', 'Смешать всё, жарить на сковороде.', 30,
+    # (название, описание, время, фото, ингредиенты)
+    ('Блины на молоке', 'Смешать всё, жарить на сковороде.', 30, 'blini.jpg',
      (('молоко', 500), ('мука пшеничная', 200), ('яйца куриные', 2))),
-    ('Омлет', 'Взбить яйца с молоком и запечь.', 15,
+    ('Омлет', 'Взбить яйца с молоком и запечь.', 15, 'omelette.jpg',
      (('яйца куриные', 3), ('молоко', 100))),
     ('Гречка с маслом', 'Отварить гречку, добавить масло.', 25,
+     'buckwheat.jpg',
      (('гречневая крупа', 200), ('сливочное масло', 30))),
 )
 
 
-def make_image(color):
-    buffer = io.BytesIO()
-    Image.new('RGB', (600, 400), color=color).save(buffer, format='PNG')
-    return ContentFile(buffer.getvalue(), name='test.png')
+def set_image(recipe, filename):
+    with open(IMAGES_DIR / filename, 'rb') as file:
+        recipe.image.save(filename, File(file), save=True)
 
 
 class Command(BaseCommand):
-    help = 'Создаёт тестовых пользователей (admin/обычные) и рецепты.'
+    help = 'Создаёт тестовых пользователей (admin/обычные) и рецепты с фото.'
 
     def handle(self, *args, **options):
         users = []
@@ -50,13 +53,17 @@ class Command(BaseCommand):
                 user.save()
             users.append(user)
 
-        for user, (name, text, time, items) in zip(users, RECIPES):
-            if Recipe.objects.filter(author=user, name=name).exists():
+        for user, (name, text, time, image, items) in zip(users, RECIPES):
+            recipe = Recipe.objects.filter(author=user, name=name).first()
+            if recipe:
+                # Заменяем старую однотонную заглушку на фото блюда.
+                if Path(recipe.image.name).stem.startswith('test'):
+                    recipe.image.delete(save=False)
+                    set_image(recipe, image)
                 continue
-            recipe = Recipe.objects.create(
-                author=user, name=name, text=text, cooking_time=time,
-                image=make_image(tuple(random.randint(80, 220)
-                                       for _ in range(3))))
+            recipe = Recipe(
+                author=user, name=name, text=text, cooking_time=time)
+            set_image(recipe, image)
             for ingredient_name, amount in items:
                 ingredient = Ingredient.objects.filter(
                     name__istartswith=ingredient_name).first()
